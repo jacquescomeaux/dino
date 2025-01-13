@@ -690,17 +690,20 @@ public class Dino.Plugins.Rtp.Stream : Xmpp.Xep.JingleRtp.Stream {
     public void on_ssrc_pad_added(uint32 ssrc, Gst.Pad pad) {
         debug("New ssrc %u with pad %s", ssrc, pad.name);
         if (participant_ssrc != 0 && participant_ssrc != ssrc) {
-            warning("Got second ssrc on stream (old: %u, new: %u), ignoring", participant_ssrc, ssrc);
-            return;
+            warning("Got second ssrc on stream (old: %u, new: %u)", participant_ssrc, ssrc);
+        }
+        if (decode != null) {
+            plugin.pause();
+            if (recv_rtp_src_pad != null) {
+              debug("Unlinking %s", recv_rtp_src_pad.name);
+              recv_rtp_src_pad.unlink(decode.get_static_pad("sink"));
+            }
+            debug("Link %s to %s decode for %s", pad.name, media, name);
+            pad.link(decode.get_static_pad("sink"));
+            plugin.unpause();
         }
         participant_ssrc = ssrc;
         recv_rtp_src_pad = pad;
-        if (decode != null) {
-            plugin.pause();
-            debug("Link %s to %s decode for %s", recv_rtp_src_pad.name, media, name);
-            recv_rtp_src_pad.link(decode.get_static_pad("sink"));
-            plugin.unpause();
-        }
     }
 
     public void on_send_rtp_src_added(Gst.Pad pad) {
