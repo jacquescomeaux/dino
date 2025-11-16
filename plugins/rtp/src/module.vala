@@ -171,11 +171,13 @@ public class Dino.Plugins.Rtp.Module : JingleRtp.Module {
         return list;
     }
 
-    public override async JingleRtp.PayloadType? pick_payload_type(string media, Gee.List<JingleRtp.PayloadType> payloads) {
+    public override async Gee.List<JingleRtp.PayloadType> pick_payload_types(string media, Gee.List<JingleRtp.PayloadType> payloads) {
         if (media == "audio" || media == "video") {
+            Gee.List<JingleRtp.PayloadType> pts = new ArrayList<JingleRtp.PayloadType>();
             foreach (JingleRtp.PayloadType type in payloads) {
-                if (yield is_payload_supported(media, type)) return adjust_payload_type(media, type.clone());
+                if (yield is_payload_supported(media, type)) pts.add(adjust_payload_type(media, type.clone()));
             }
+            return pts;
         } else {
             warning("Unsupported media type: %s", media);
         }

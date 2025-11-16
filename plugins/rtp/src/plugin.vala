@@ -149,10 +149,12 @@ public class Dino.Plugins.Rtp.Plugin : RootInterface, VideoCallPlugin, Object {
         debug("pad added: %s", pad.name);
         if (pad.name.has_prefix("recv_rtp_src_")) {
             string[] split = pad.name.split("_");
-            uint8 rtpid = (uint8)int.parse(split[3]);
+            uint8 rtpid = (uint8) int.parse(split[3]);
+            uint32 ssrc = (uint32) split[4].to_uint64();
+            uint8 pt = (uint8) int.parse(split[5]);
             foreach (Stream stream in streams) {
                 if (stream.rtpid == rtpid) {
-                    stream.on_ssrc_pad_added((uint32) split[4].to_uint64(), pad);
+                    stream.on_ssrc_pad_added(ssrc, pt, pad);
                 }
             }
         }

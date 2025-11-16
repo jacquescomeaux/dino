@@ -6,7 +6,40 @@ public class Dino.Plugins.Rtp.CodecUtil {
     private Set<string> supported_elements = new HashSet<string>();
     private Set<string> unsupported_elements = new HashSet<string>();
 
-    public static Gst.Caps get_caps(string media, JingleRtp.PayloadType payload_type, bool incoming) {
+    private static Gst.Structure get_caps_structure(string media, JingleRtp.PayloadType payload_type, bool incoming) {
+        Gst.Structure structure = new Gst.Structure("application/x-rtp",
+                "media", typeof(string), media,
+                "payload", typeof(int), payload_type.id);
+        //"channels", typeof(int), payloadType.channels,
+                //"max-ptime", typeof(int), payloadType.maxptime);
+        if (payload_type.clockrate != 0) {
+            structure.set("clock-rate", typeof(int), payload_type.clockrate);
+        }
+        if (payload_type.name != null) {
+            structure.set("encoding-name", typeof(string), payload_type.name.up());
+        }
+        if (incoming) {
+            foreach (JingleRtp.RtcpFeedback rtcp_fb in payload_type.rtcp_fbs) {
+                if (rtcp_fb.subtype == null) {
+                    structure.set(@"rtcp-fb-$(rtcp_fb.type_)", typeof(bool), true);
+                } else {
+                    structure.set(@"rtcp-fb-$(rtcp_fb.type_)-$(rtcp_fb.subtype)", typeof(bool), true);
+                }
+            }
+        }
+        return structure;
+    }
+
+    public static Gst.Caps get_caps(string media, Gee.List<JingleRtp.PayloadType> payload_types, bool incoming) {
+        Gst.Caps caps = new Gst.Caps.empty();
+        foreach (JingleRtp.PayloadType pt in payload_types) {
+          Gst.Structure structure = get_caps_structure(media, pt, incoming);
+          caps.append_structure(structure.copy());
+        }
+        return caps;
+    }
+
+    public static Gst.Caps get_caps_single(string media, JingleRtp.PayloadType payload_type, bool incoming) {
         Gst.Caps caps = new Gst.Caps.simple("application/x-rtp",
                 "media", typeof(string), media,
                 "payload", typeof(int), payload_type.id);

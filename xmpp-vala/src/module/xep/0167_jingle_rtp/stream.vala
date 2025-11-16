@@ -11,12 +11,9 @@ public abstract class Xmpp.Xep.JingleRtp.Stream : Object {
         }
         return null;
     }}
-    public JingleRtp.PayloadType? payload_type { get {
+    public Gee.List<JingleRtp.PayloadType>? payload_types { get {
         var content_params = content.content_params;
-        if (content_params is Parameters) {
-            return ((Parameters)content_params).agreed_payload_type;
-        }
-        return null;
+        return ((Parameters)content_params).agreed_payload_types;
     }}
     public JingleRtp.Crypto? local_crypto { get {
         var content_params = content.content_params;
@@ -55,7 +52,7 @@ public abstract class Xmpp.Xep.JingleRtp.Stream : Object {
 
     // Receiver Estimated Maximum Bitrate
     public bool remb_enabled { get {
-        return payload_type != null ? payload_type.rtcp_fbs.any_match((it) => it.type_ == "goog-remb") : false;
+        return payload_types != null && !payload_types.is_empty ? payload_types[0].rtcp_fbs.any_match((it) => it.type_ == "goog-remb") : false;
     }}
     public uint target_receive_bitrate { get; set; default=256; }
     public uint target_send_bitrate { get; set; default=256; }

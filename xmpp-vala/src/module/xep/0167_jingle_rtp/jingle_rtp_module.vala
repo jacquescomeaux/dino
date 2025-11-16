@@ -20,7 +20,7 @@ public abstract class Module : XmppStreamModule {
 
     public abstract async Gee.List<PayloadType> get_supported_payloads(string media);
     public abstract async bool is_payload_supported(string media, JingleRtp.PayloadType payload_type);
-    public abstract async PayloadType? pick_payload_type(string media, Gee.List<PayloadType> payloads);
+    public abstract async Gee.List<PayloadType> pick_payload_types(string media, Gee.List<PayloadType> payloads);
     public abstract Crypto? generate_local_crypto();
     public abstract Crypto? pick_remote_crypto(Gee.List<Crypto> cryptos);
     public abstract Crypto? pick_local_crypto(Crypto? remote);

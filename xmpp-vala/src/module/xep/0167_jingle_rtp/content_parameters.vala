@@ -15,8 +15,8 @@ public class Xmpp.Xep.JingleRtp.Parameters : Jingle.ContentParameters, Object {
     public string? bandwidth_type { get; private set; }
 
     public bool encryption_required { get; private set; default = false; }
-    public PayloadType? agreed_payload_type { get; private set; }
-    public Gee.List<PayloadType> payload_types = new ArrayList<PayloadType>(PayloadType.equals_func);
+    public Gee.List<PayloadType>? agreed_payload_types = new ArrayList<PayloadType>(PayloadType.equals_func);
+    public Gee.List<PayloadType> offered_payload_types = new ArrayList<PayloadType>(PayloadType.equals_func);
     public Gee.List<HeaderExtension> header_extensions = new ArrayList<HeaderExtension>();
     public Gee.List<Crypto> remote_cryptos = new ArrayList<Crypto>();
     public Crypto? local_crypto = null;
@@ -30,7 +30,7 @@ public class Xmpp.Xep.JingleRtp.Parameters : Jingle.ContentParameters, Object {
     private Module parent;
 
     public Parameters(Module parent,
-                      string media, Gee.List<PayloadType> payload_types,
+                      string media, Gee.List<PayloadType> offered_payload_types,
                       string? ssrc = null, bool rtcp_mux = false,
                       string? bandwidth = null, string? bandwidth_type = null,
                       bool encryption_required = false, Crypto? local_crypto = null
@@ -42,7 +42,7 @@ public class Xmpp.Xep.JingleRtp.Parameters : Jingle.ContentParameters, Object {
         this.bandwidth = bandwidth;
         this.bandwidth_type = bandwidth_type;
         this.encryption_required = encryption_required;
-        this.payload_types = payload_types;
+        this.offered_payload_types = offered_payload_types;
         this.local_crypto = local_crypto;
     }
 
@@ -59,7 +59,7 @@ public class Xmpp.Xep.JingleRtp.Parameters : Jingle.ContentParameters, Object {
             }
         }
         foreach (StanzaNode payloadType in node.get_subnodes(PayloadType.NAME)) {
-            this.payload_types.add(PayloadType.parse(payloadType));
+            this.offered_payload_types.add(PayloadType.parse(payloadType));
         }
         foreach (StanzaNode subnode in node.get_subnodes(HeaderExtension.NAME, HeaderExtension.NS_URI)) {
             this.header_extensions.add(HeaderExtension.parse(subnode));
@@ -67,9 +67,9 @@ public class Xmpp.Xep.JingleRtp.Parameters : Jingle.ContentParameters, Object {
     }
 
     public async void handle_proposed_content(XmppStream stream, Jingle.Session session, Jingle.Content content) {
-        agreed_payload_type = yield parent.pick_payload_type(media, payload_types);
-        if (agreed_payload_type == null) {
-            debug("no usable payload type");
+        agreed_payload_types = yield parent.pick_payload_types(media, offered_payload_types);
+        if (agreed_payload_types.is_empty) {
+            debug("no usable payload types");
             content.reject();
             return;
         }
@@ -160,11 +160,17 @@ public class Xmpp.Xep.JingleRtp.Parameters : Jingle.ContentParameters, Object {
             warning("Counterpart didn't include any payload types");
             return;
         }
-        PayloadType preferred_payload_type = PayloadType.parse(payload_type_nodes[0]);
-        if (!payload_types.contains(preferred_payload_type)) {
-            warning("Counterpart's preferred content type doesn't match any of our sent ones");
+
+        Gee.List<PayloadType> preferred_payload_types = new ArrayList<PayloadType>(PayloadType.equals_func);
+        foreach (StanzaNode pt_node in payload_type_nodes) {
+          PayloadType pt = PayloadType.parse(pt_node);
+          if (offered_payload_types.contains(pt)) {
+            preferred_payload_types.add(pt);
+          } else {
+            warning("One of counterpart's content payload types doesn't match any of our sent ones");
+          }
         }
-        agreed_payload_type = preferred_payload_type;
+        agreed_payload_types = preferred_payload_types;
 
         Gee.List<StanzaNode> crypto_nodes = description_node.get_deep_subnodes("encryption", "crypto");
         if (crypto_nodes.size == 0) {
@@ -192,10 +198,12 @@ public class Xmpp.Xep.JingleRtp.Parameters : Jingle.ContentParameters, Object {
                 .add_self_xmlns()
                 .put_attribute("media", media);
 
-        if (agreed_payload_type != null) {
-            ret.put_node(agreed_payload_type.to_xml());
+        if (agreed_payload_types != null) {
+            foreach (PayloadType pt in agreed_payload_types) {
+                ret.put_node(pt.to_xml());
+            }
         } else {
-            foreach (PayloadType payload_type in payload_types) {
+            foreach (PayloadType payload_type in offered_payload_types) {
                 ret.put_node(payload_type.to_xml());
             }
         }

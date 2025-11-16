@@ -29,7 +29,7 @@ public class Dino.Plugins.Rtp.Stream : Xmpp.Xep.JingleRtp.Stream {
     public Device input_device { get { return _input_device; } set {
         if (sending && !paused) {
             var input = this.input;
-            set_input(value != null ? value.link_source(payload_type, our_ssrc, next_seqnum_offset, next_timestamp_offset) : null);
+            set_input(value != null ? value.link_source(payload_types[0], our_ssrc, next_seqnum_offset, next_timestamp_offset) : null);
             if (this._input_device != null) this._input_device.unlink(input);
         }
         this._input_device = value;
@@ -51,7 +51,7 @@ public class Dino.Plugins.Rtp.Stream : Xmpp.Xep.JingleRtp.Stream {
     private uint32 next_timestamp_offset { get {
         if (next_timestamp_offset_base == 0) return 0;
         int64 monotonic_diff = get_monotonic_time() - next_timestamp_offset_stamp;
-        return next_timestamp_offset_base + (uint32)((double)monotonic_diff / 1000000.0 * payload_type.clockrate);
+        return next_timestamp_offset_base + (uint32)((double)monotonic_diff / 1000000.0 * payload_types[0].clockrate);
     } }
     private uint32 participant_ssrc = 0;
 
@@ -96,7 +96,7 @@ public class Dino.Plugins.Rtp.Stream : Xmpp.Xep.JingleRtp.Stream {
         // Create app elements
         send_rtp = Gst.ElementFactory.make("appsink", @"rtp_sink_$rtpid") as Gst.App.Sink;
         send_rtp.async = false;
-        send_rtp.caps = CodecUtil.get_caps(media, payload_type, false);
+        send_rtp.caps = CodecUtil.get_caps_single(media, payload_types[0], false);
         send_rtp.emit_signals = true;
         send_rtp.sync = true;
         send_rtp.drop = true;
@@ -120,7 +120,7 @@ public class Dino.Plugins.Rtp.Stream : Xmpp.Xep.JingleRtp.Stream {
         pipe.add(send_rtcp);
 
         recv_rtp = Gst.ElementFactory.make("appsrc", @"rtp_src_$rtpid") as Gst.App.Src;
-        recv_rtp.caps = CodecUtil.get_caps(media, payload_type, true);
+        recv_rtp.caps = CodecUtil.get_caps(media, payload_types, true);
         recv_rtp.do_timestamp = true;
         recv_rtp.format = Gst.Format.TIME;
         recv_rtp.is_live = true;
@@ -146,14 +146,6 @@ public class Dino.Plugins.Rtp.Stream : Xmpp.Xep.JingleRtp.Stream {
             input_pad.link(send_rtp_sink_pad);
         }
 
-        // Connect output
-        decode = codec_util.get_decode_bin(media, payload_type, @"decode_$rtpid");
-        decode_depay = (Gst.RTP.BaseDepayload)((Gst.Bin)decode).get_by_name(@"decode_$(rtpid)_rtp_depay");
-        pipe.add(decode);
-        if (output != null) {
-            decode.link(output);
-        }
-
         // Connect RTP
         recv_rtp_sink_pad = rtpbin.get_request_pad(@"recv_rtp_sink_$rtpid");
         recv_rtp.get_static_pad("src").link(recv_rtp_sink_pad);
@@ -172,7 +164,7 @@ public class Dino.Plugins.Rtp.Stream : Xmpp.Xep.JingleRtp.Stream {
             Timeout.add(1000, () => remb_adjust());
         }
         if (input_device != null && media == "video") {
-            input_device.update_bitrate(payload_type, target_send_bitrate);
+            input_device.update_bitrate(payload_types[0], target_send_bitrate);
         }
     }
 
@@ -286,7 +278,7 @@ public class Dino.Plugins.Rtp.Stream : Xmpp.Xep.JingleRtp.Stream {
             uint8 br_exp = data[5] >> 2;
             uint32 br_mant = (((uint32)data[5] & 0x3) << 16) + ((uint32)data[6] << 8) + (uint32)data[7];
             self.target_send_bitrate = (br_mant << br_exp) / 1000;
-            self.input_device.update_bitrate(self.payload_type, self.target_send_bitrate);
+            self.input_device.update_bitrate(self.payload_types[0], self.target_send_bitrate);
         }
     }
 
@@ -689,20 +681,36 @@ public class Dino.Plugins.Rtp.Stream : Xmpp.Xep.JingleRtp.Stream {
         debug("RTCP is ready, resending rtcp: %s", rtp_sent.to_string());
     }
 
-    public void on_ssrc_pad_added(uint32 ssrc, Gst.Pad pad) {
-        debug("New ssrc %u with pad %s", ssrc, pad.name);
+    public void on_ssrc_pad_added(uint32 ssrc, uint8 pt, Gst.Pad pad) {
+        debug("New ssrc %u with pt %u and pad %s", ssrc, pt, pad.name);
         if (participant_ssrc != 0 && participant_ssrc != ssrc) {
             warning("Got second ssrc on stream (old: %u, new: %u), ignoring", participant_ssrc, ssrc);
             return;
         }
         participant_ssrc = ssrc;
         recv_rtp_src_pad = pad;
-        if (decode != null) {
-            plugin.pause();
-            debug("Link %s to %s decode for %s", recv_rtp_src_pad.name, media, name);
-            recv_rtp_src_pad.link(decode.get_static_pad("sink"));
-            plugin.unpause();
+
+        Xmpp.Xep.JingleRtp.PayloadType? payload_type = payload_types.first_match((x) => x.id == pt);
+        if (payload_type == null) {
+          debug("No match in payload_types for incoming ssrc");
+          return;
         }
+
+        decode = codec_util.get_decode_bin(media, payload_type, @"decode_$rtpid");
+
+        if (decode == null) {
+          debug("Get decode bin failed");
+        }
+        decode_depay = (Gst.RTP.BaseDepayload)((Gst.Bin)decode).get_by_name(@"decode_$(rtpid)_rtp_depay");
+        plugin.pause();
+        pipe.add(decode);
+        if (output != null) {
+          decode.link(output);
+        }
+        debug("Link %s to %s decode for %s", recv_rtp_src_pad.name, media, name);
+        recv_rtp_src_pad.link(decode.get_static_pad("sink"));
+        plugin.unpause();
+
     }
 
     public void on_send_rtp_src_added(Gst.Pad pad) {
@@ -747,8 +755,8 @@ public class Dino.Plugins.Rtp.Stream : Xmpp.Xep.JingleRtp.Stream {
 
     public void unpause() {
         if (!paused) return;
-        set_input_and_pause(input_device != null ? input_device.link_source(payload_type, our_ssrc, next_seqnum_offset, next_timestamp_offset) : null, false);
-        input_device.update_bitrate(payload_type, target_send_bitrate);
+        set_input_and_pause(input_device != null ? input_device.link_source(payload_types[0], our_ssrc, next_seqnum_offset, next_timestamp_offset) : null, false);
+        input_device.update_bitrate(payload_types[0], target_send_bitrate);
     }
 
     public uint get_participant_ssrc(Xmpp.Jid participant) {
@@ -770,12 +778,14 @@ public class Dino.Plugins.Rtp.Stream : Xmpp.Xep.JingleRtp.Stream {
         }
         this.output = element;
         if (created) {
-            plugin.pause();
-            decode.link(element);
-            if (block_probe_handler_id != 0) {
-                decode.get_static_pad("src").remove_probe(block_probe_handler_id);
-            }
-            plugin.unpause();
+            if (decode != null) {
+                plugin.pause();
+                decode.link(element);
+                if (block_probe_handler_id != 0) {
+                    decode.get_static_pad("src").remove_probe(block_probe_handler_id);
+                }
+                plugin.unpause();
+            } else { critical("add_output() invoked when decode is null"); }
         }
     }
 

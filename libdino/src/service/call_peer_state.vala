@@ -288,9 +288,9 @@ public class Dino.PeerState : Object {
             ret.rtcp_ready = parameter.rtcp_ready;
             ret.rtp_ready = parameter.rtp_ready;
 
-            if (parameter.agreed_payload_type != null) {
-                ret.codec = parameter.agreed_payload_type.name;
-                ret.clockrate = parameter.agreed_payload_type.clockrate;
+            if (parameter.agreed_payload_types != null && !parameter.agreed_payload_types.is_empty) {
+                ret.codec = parameter.agreed_payload_types[0].name;
+                ret.clockrate = parameter.agreed_payload_types[0].clockrate;
             }
             if (parameter.stream != null && parameter.stream.remb_enabled) {
                 ret.target_receive_bytes = parameter.stream.target_receive_bitrate;
